@@ -1,0 +1,38 @@
+# Argo Workflows v4.1.6 quick-start, with RustFS as the S3 artifact store instead of the
+# quick-start's MinIO fork, and the UI and S3 exposed as NodePorts (see kind-config.yaml).
+# The quick-start is the release asset, referenced by URL (12 MB); up.sh checks its sha256:
+#   2c688114d0cc00162ae433d73f7009f3226e8c761ab3f8535cc5d34ae7c8cf71
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argo
+resources:
+  - https://github.com/argoproj/argo-workflows/releases/download/v4.1.6/quick-start-minimal.yaml
+  - rustfs.yaml
+patches:
+  # the quick-start's own S3 server; rustfs.yaml takes its place behind the same `minio` Service
+  - patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: minio
+  - patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: argo-server
+        namespace: argo      # set in the quick-start (unlike minio), so the patch must match it
+      spec:
+        type: NodePort
+        ports:
+          - {port: 2746, nodePort: 32746}
+  - patch: |-
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: minio
+      spec:
+        type: NodePort
+        ports:   # protocol too: kustomize matches ports on port + protocol, and the quick-start sets it
+          - {port: 9000, protocol: TCP, nodePort: 30900}
+          - {port: 9001, protocol: TCP, nodePort: 30901}

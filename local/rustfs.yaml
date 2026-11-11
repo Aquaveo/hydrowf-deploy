@@ -1,0 +1,72 @@
+# RustFS (Apache-2.0, S3-compatible) as Argo's artifact store.
+# Labelled app: minio, so the quick-start's `minio` Service selects it, and it reads the
+# quick-start's `my-minio-cred` Secret (admin / password): `artifact-repositories` works unchanged.
+# Local development only: fixed credentials.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rustfs-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 50Gi          # kind's local-path provisioner doesn't enforce it
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rustfs
+  labels:
+    app: minio
+spec:
+  strategy:
+    type: Recreate           # one ReadWriteOnce volume
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsUser: 10001     # the image's user
+        runAsGroup: 10001
+        fsGroup: 10001
+      initContainers:
+        # A folder under the data dir is a bucket: create the one artifact-repositories uses
+        - name: bucket
+          image: docker.io/rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74
+          command: [sh, -c, "mkdir -p /data/my-bucket"]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      containers:
+        - name: main
+          image: docker.io/rustfs/rustfs:1.0.5@sha256:b81d16a90ee25bd9511280127ca1471788c6e874cf0f0da759645f46b2dc1d74
+          env:
+            - {name: RUSTFS_VOLUMES, value: /data}
+            - {name: RUSTFS_ADDRESS, value: "0.0.0.0:9000"}
+            - {name: RUSTFS_CONSOLE_ADDRESS, value: "0.0.0.0:9001"}
+            - {name: RUSTFS_CONSOLE_ENABLE, value: "true"}
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: my-minio-cred, key: accesskey}}
+            - name: RUSTFS_SECRET_KEY
+              valueFrom: {secretKeyRef: {name: my-minio-cred, key: secretkey}}
+          ports:
+            - {containerPort: 9000, name: api}
+            - {containerPort: 9001, name: dashboard}
+          readinessProbe:
+            httpGet: {path: /health, port: 9000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 9000}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: rustfs-data
