@@ -1,0 +1,12 @@
+# kind cluster for local development: one node, Argo UI and S3 on localhost (no port-forward).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: hydrowf
+nodes:
+  - role: control-plane
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5   # kind 0.33 default
+    # host port <- node port; the NodePorts are set in kustomization.yaml
+    extraPortMappings:
+      - {containerPort: 32746, hostPort: 2746, listenAddress: "127.0.0.1"}   # Argo UI (https)
+      - {containerPort: 30900, hostPort: 9000, listenAddress: "127.0.0.1"}   # S3 API (RustFS)
+      - {containerPort: 30901, hostPort: 9001, listenAddress: "127.0.0.1"}   # RustFS console
