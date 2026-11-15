@@ -43,7 +43,8 @@ aws --endpoint-url http://localhost:9000 s3 cp conus_nextgen.gpkg s3://my-bucket
 aws --endpoint-url http://localhost:9000 s3 cp conus_igraph_network.gpickle s3://my-bucket/hydrofabric/v2.2/
 ```
 
-Then translate and submit with hydrowf-platform (`hydrowf-cwl2argo`, see its README).
+Then render and submit a pipeline lego with hydrowf-core (`hydrowf_core.adapters.argo.render`,
+`ArgoRuntime`, see its README).
 
 ## Smoke test
 
