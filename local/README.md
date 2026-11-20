@@ -51,3 +51,30 @@ Then render and submit a pipeline lego with hydrowf-core (`hydrowf_core.adapters
 ```sh
 argo submit -n argo --watch https://raw.githubusercontent.com/argoproj/argo-workflows/v4.1.6/examples/artifact-passing.yaml
 ```
+
+## Read keys for job outputs (hydrowf-ogc `GET /ogc/jobs/{id}/credentials`)
+
+hydrowf-ogc hands a job's owner short-lived keys that may only read that job's outputs (S3 STS
+`AssumeRole` with a session policy). Their parent must be a read-only identity, never the admin key:
+
+```bash
+kubectl --context kind-hydrowf -n argo port-forward svc/minio 9000:9000 &
+./s3-reader.sh        # user hydrowf-reader, policy hydrowf-read (s3-reader-policy.json), Secret hydrowf-s3-reader
+```
+
+Then run hydrowf-ogc with `HYDROWF_S3_READER_ACCESS_KEY` / `HYDROWF_S3_READER_SECRET_KEY` from the Secret
+`hydrowf-s3-reader`, `HYDROWF_STS_ENDPOINT=http://localhost:9000`, and a `credentials: {role_arn:
+arn:aws:iam::0:role/hydrowf-reader}` section in its manager config (RustFS takes any ARN). The script is
+safe to run again and prints no keys.
+
+**On EKS** there is no reader user: hydrowf-ogc's pod has an IAM role (EKS Pod Identity or IRSA) allowed to
+`sts:AssumeRole` a role `hydrowf-reader`, and `credentials.role_arn` names that role.
+- `hydrowf-reader`'s permissions: `s3:GetObject` on `arn:aws:s3:::<bucket>/*` and `s3:ListBucket` on the
+  bucket, nothing else (as `s3-reader-policy.json`). The session policy hydrowf-ogc adds narrows it to one
+  job's outputs.
+- Its trust policy names only hydrowf-ogc's role. With EKS Pod Identity the pod's session carries tags;
+  check whether chaining into `hydrowf-reader` needs `sts:TagSession` in that trust policy too.
+- Role chaining caps a session at 1 hour, so `credentials.duration` is 900 to 3600 (default 900).
+- Sessions can't call GetBucketLocation: set `credentials.region` to the bucket's region (readers pass it).
+- Not verified on AWS yet: a read of a missing key may answer 403 rather than 404 (hydrowf-ogc docs/ogc.md,
+  Known gaps). Test a sparse Zarr before relying on it.
