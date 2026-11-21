@@ -8,7 +8,30 @@ namespace: argo
 resources:
   - https://github.com/argoproj/argo-workflows/releases/download/v4.1.6/quick-start-minimal.yaml
   - rustfs.yaml
+  - hydrowf-ogc.yaml
 patches:
+  # Workflow pods run as `default`. The quick-start lets it create pods and workflows (for its examples); a
+  # tool that could do either could pose as a step, or submit a workflow naming what it may read, and get
+  # read keys from hydrowf-ogc's step-key vendor. Pods keep executor (task results) and artifactgc; agent is
+  # for HTTP and plugin templates, which hydrowf doesn't render.
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: agent-default
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: pod-manager-default
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata:
+        name: workflow-manager-default
   # the quick-start's own S3 server; rustfs.yaml takes its place behind the same `minio` Service
   - patch: |-
       $patch: delete

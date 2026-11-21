@@ -31,6 +31,9 @@ ctx=(--context "kind-$CLUSTER")
 echo "== Argo + RustFS"
 kubectl "${ctx[@]}" create namespace argo --dry-run=client -o yaml | kubectl "${ctx[@]}" apply -f -
 kubectl "${ctx[@]}" apply --server-side -k .
+# apply never deletes: a cluster made before kustomization.yaml dropped these still has them
+kubectl "${ctx[@]}" -n argo delete rolebinding pod-manager-default workflow-manager-default agent-default \
+  --ignore-not-found
 kubectl "${ctx[@]}" -n argo rollout status deploy/workflow-controller deploy/argo-server deploy/rustfs --timeout=300s
 
 cat <<MSG
