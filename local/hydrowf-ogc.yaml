@@ -1,0 +1,61 @@
+# hydrowf-ogc's identity in the cluster, for its step-key vendor (hydrowf-ogc docs/ogc.md, "Steps that read in
+# place"): a step that reads the bucket in place sends its pod's projected token, and the vendor checks it with a
+# TokenReview and reads the pod. Those two calls are all this identity may make.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: hydrowf-ogc
+  namespace: argo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole            # TokenReviews are cluster-scoped
+metadata:
+  name: hydrowf-token-review
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hydrowf-ogc-token-review
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: hydrowf-token-review
+subjects:
+  - {kind: ServiceAccount, name: hydrowf-ogc, namespace: argo}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hydrowf-pod-reader
+  namespace: argo
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hydrowf-ogc-pod-reader
+  namespace: argo
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hydrowf-pod-reader
+subjects:
+  - {kind: ServiceAccount, name: hydrowf-ogc, namespace: argo}
+---
+# Local only: hydrowf-ogc runs in Docker beside kind, not in a pod, so it gets a token from this Secret
+# (vendor-access.sh writes it to a file). In a cluster the pod's own mounted token is used instead.
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: hydrowf-ogc-token
+  namespace: argo
+  annotations:
+    kubernetes.io/service-account.name: hydrowf-ogc
