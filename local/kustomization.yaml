@@ -59,3 +59,13 @@ patches:
         ports:   # protocol too: kustomize matches ports on port + protocol, and the quick-start sets it
           - {port: 9000, protocol: TCP, nodePort: 30900}
           - {port: 9001, protocol: TCP, nodePort: 30901}
+  # The controller's limits, as hydrowf runs jobs. A job keeps Argo's artifact-gc finalizer until it is deleted
+  # (render's artifactGC: OnWorkflowDeletion), and Argo v4.1.6 keeps every such workflow in its parallelism
+  # count until then (controller.go reconciliationNeeded): with the quick-start's namespaceParallelism of 10,
+  # new jobs stay Pending once 10 finished jobs are kept. 0 is no limit. And the quick-start's retentionPolicy
+  # deletes all but the newest 10 completed (3 failed) workflows, with their outputs; render's per-job
+  # ttlStrategy (30 days in hydrowf-ogc) decides instead.
+  - target: {kind: ConfigMap, name: workflow-controller-configmap}
+    patch: |-
+      - {op: replace, path: /data/namespaceParallelism, value: "0"}
+      - {op: remove, path: /data/retentionPolicy}
