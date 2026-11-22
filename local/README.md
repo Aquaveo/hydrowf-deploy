@@ -24,7 +24,8 @@ Needs Docker, [kind](https://kind.sigs.k8s.io/), kubectl, curl, and the
 - `kustomization.yaml`: the Argo v4.1.6 quick-start (release asset, by URL; `up.sh` checks its
   sha256) with these changes: its S3 server is removed, the `argo-server` and `minio` Services
   become NodePorts, and workflow pods (service account `default`) may no longer create pods or
-  workflows (see [Steps that read in place](#steps-that-read-in-place)).
+  workflows (see [Steps that read in place](#steps-that-read-in-place)), and the controller runs without a
+  parallelism limit or retention policy (see [Argo's controller limits](#argos-controller-limits)).
 - `hydrowf-ogc.yaml`: hydrowf-ogc's service account for its step-key vendor: create TokenReviews, get
   pods in `argo`, nothing else.
 - `rustfs.yaml`: RustFS on a 50 Gi volume, behind the quick-start's `minio` Service and with its
@@ -37,6 +38,30 @@ The bucket is on a volume, so it survives a RustFS pod restart; `down.sh` delete
 `up.sh` applies these files over whatever the cluster has. On a cluster it didn't make (or made from older
 files), run `kubectl --context kind-hydrowf diff -k .` first: an apply that changes RustFS's volume starts it
 on an empty one.
+
+## Argo's controller limits
+
+The quick-start's controller config limits a namespace to 10 running workflows and keeps only the newest 10
+completed (3 failed) workflows. Both are wrong for hydrowf, so `kustomization.yaml` sets
+`namespaceParallelism: "0"` (no limit) and removes `retentionPolicy`:
+
+- **Kept jobs count as running.** render gives every job `artifactGC: OnWorkflowDeletion`, so a finished job
+  keeps Argo's `workflows.argoproj.io/artifact-gc` finalizer until it is deleted. Argo v4.1.6 keeps any
+  workflow with that finalizer in its parallelism count (`reconciliationNeeded` in
+  workflow/controller/controller.go; the throttler only frees a slot when that is false, or on deletion).
+  With a limit of 10, new jobs stay `Pending` ("too many workflows are already running") once 10 finished
+  jobs are kept. The global `parallelism` counts the same way.
+- **Retention deletes outputs.** Argo deletes workflows past `retentionPolicy`'s counts, and deleting a job
+  deletes its outputs (artifact GC). Jobs are kept for render's per-job `ttlStrategy` instead (hydrowf-ogc:
+  30 days, `retention`).
+
+On EKS the same holds: leave both unset in the controller config, and limit how much runs at once with the
+cluster's capacity (requests, the autoscaler's maximum), not Argo's parallelism. hydrowf-ogc has no per-user
+limit on running jobs yet (its docs/ogc.md plans only a storage quota): until it has one, a single caller can
+fill the cluster.
+
+A cluster changed with `kubectl patch` before this needs `kubectl apply --server-side --force-conflicts` on the
+config map once (the patch owns the field), or `up.sh` stops on a conflict.
 
 ## Running hydrowf pipelines
 
